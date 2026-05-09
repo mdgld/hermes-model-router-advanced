@@ -1,0 +1,8 @@
+name: model-router
+version: "1.0.0"
+description: "Cost-aware automatic model routing. Classifies each turn by complexity and switches to the cheapest tier that can handle it — from Qwen Flash (Tier 1) up to Claude Sonnet with reasoning (Tier 5). Routing rules from skill_routing.md."
+author: Jakub Misiak
+provides_hooks:
+  - pre_llm_call
+  - post_llm_call
+  - post_tool_call
