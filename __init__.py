@@ -60,9 +60,9 @@ DEFAULT_ROUTER_CONFIG = {
             ],
         },
         2: {
-            "label": "T2 Plus",
+            "label": "T2 DeepSeek",
             "emoji": "🔹",
-            "model": "qwen/qwen3.6-plus",
+            "model": "deepseek/deepseek-v4-flash",
             "reasoning": None,
             "role": "default daily-driver",
             "best_for": [
@@ -72,27 +72,29 @@ DEFAULT_ROUTER_CONFIG = {
             ],
         },
         3: {
-            "label": "T3 Haiku",
+            "label": "T3 MiniMax",
             "emoji": "🔷",
-            "model": "anthropic/claude-haiku-4-5",
+            "model": "minimax/minimax-m2.7",
             "reasoning": None,
-            "role": "stronger fast-path model",
+            "role": "strong reasoning and synthesis",
             "best_for": [
                 "Debugging",
                 "Code review",
                 "Large-document synthesis",
+                "Complex analysis",
             ],
         },
         4: {
-            "label": "T4 Sonnet",
+            "label": "T4 Haiku",
             "emoji": "🔸",
-            "model": "anthropic/claude-sonnet-4-6",
-            "reasoning": "low",
-            "role": "deliberate planner",
+            "model": "anthropic/claude-haiku-4-5",
+            "reasoning": None,
+            "role": "deliberate fast planner",
             "best_for": [
                 "Architecture",
                 "Migration planning",
                 "Complex multi-step design",
+                "Nuanced code review",
             ],
         },
         5: {
@@ -388,6 +390,9 @@ def _get_cached_tier(session_id: str, msg: str) -> int | None:
 
 def _set_cached_tier(session_id: str, msg: str, tier: int) -> None:
     with _state_lock:
+        # Cache one entry per session (msg, tier) for dedup.
+        # Keeps only the CURRENT message — new messages will replace old ones.
+        # This avoids unbounded growth while preserving dedup for immediate reruns.
         _session_last[session_id] = (msg, tier)
 
 
@@ -565,21 +570,46 @@ def on_pre_llm_call(
 
     history = conversation_history or []
 
+    # Get live agent.model instead of relying on stale 'model' parameter
+    # (model parameter is from plugin hook context and may lag behind actual agent state)
+    actual_model = model
+    try:
+        cli = _manager_ref._cli_ref
+        if cli:
+            agent = getattr(cli, "agent", None)
+            if agent:
+                actual_model = agent.model
+    except Exception as exc:
+        logger.debug("model-router: failed to get live agent.model: %s", exc)
+
     # Respektuj ręczny override
-    if _is_manual_override(session_id, model):
-        logger.debug("model-router: manual override active (%s), skipping", model)
+    if _is_manual_override(session_id, actual_model):
+        logger.debug("model-router: manual override active (%s), skipping", actual_model)
         return
 
-    # ── First LLM call of a turn (is_first_turn=True) ────────────────────────
-    # Classify and set base tier. On subsequent calls (tool-loop iterations)
-    # we honour whatever tier is already active (possibly escalated).
-    if is_first_turn:
+    # ── Determine whether this is a "new user turn" vs tool-loop iteration ───
+    #
+    # IMPORTANT: Hermes passes is_first_turn=True ONLY when conversation_history
+    # is empty (i.e. the very first turn of the entire session).  Every subsequent
+    # user turn arrives with is_first_turn=False because conversation_history is
+    # already populated.  We therefore cannot rely on is_first_turn to detect a
+    # new user message.
+    #
+    # Instead we track the last message text we classified per session.  If msg
+    # differs from the last classified message this is definitely a new user turn
+    # and we re-classify.  If msg is the same we are inside the tool-calling loop
+    # for the same turn and we only need to confirm escalation state.
+    with _state_lock:
+        last_entry = _session_last.get(session_id)
+        is_new_user_turn = (last_entry is None) or (last_entry[0] != msg)
+
+    if is_new_user_turn:
         # Reset per-turn error counters
         with _state_lock:
             _tool_errors[session_id] = 0
             _escalated[session_id]   = False
 
-        # 1. Explicit user request?
+        # 1. Explicit user request? (e.g. "T3 pls", "a T2 jesteś tu?")
         explicit = _detect_explicit_tier(msg)
         if explicit is not None:
             target_tier = explicit
@@ -587,21 +617,27 @@ def on_pre_llm_call(
             logger.info("model-router: explicit T%d request honoured", target_tier)
         elif _is_obvious_ack(msg):
             target_tier = 1
+            _set_cached_tier(session_id, msg, target_tier)
         else:
-            cached = _get_cached_tier(session_id, msg)
-            if cached is not None:
-                target_tier = cached
-            else:
-                target_tier = _classify_with_flash(msg, history)
-                _set_cached_tier(session_id, msg, target_tier)
+            # No explicit hint — classify with Flash
+            target_tier = _classify_with_flash(msg, history)
+            _set_cached_tier(session_id, msg, target_tier)
 
         with _state_lock:
             _base_tier[session_id] = target_tier
             _last_tier[session_id] = target_tier
 
         # Apply only if different from current model
-        if TIERS[target_tier]["model"] != model:
-            _apply_tier(session_id, target_tier, model, source="")
+        logger.debug(
+            "model-router: turn T%d -> model=%s vs actual=%s",
+            target_tier, TIERS[target_tier]["model"], actual_model
+        )
+        if TIERS[target_tier]["model"] != actual_model:
+            logger.info(
+                "model-router: switching T%d (was T%d / %s)",
+                target_tier, MODEL_TO_TIER.get(actual_model, 0), actual_model.split("/")[-1]
+            )
+            _apply_tier(session_id, target_tier, actual_model, source="")
         else:
             # Same model -- still update status bar patch and tier registry
             with _state_lock:
@@ -613,16 +649,15 @@ def on_pre_llm_call(
             except Exception:
                 pass
 
-    # ── Subsequent LLM calls (tool loop) ─────────────────────────────────────
-    # Self-escalation: if we already bumped due to errors, nothing to do here;
-    # the model has already been switched by on_post_tool_call.
-    # We just make sure the status bar reflects current state.
     else:
+        # ── Tool-loop iteration for the same user turn ────────────────────────
+        # Self-escalation is handled by on_post_tool_call.  Here we just confirm
+        # that any mid-loop escalation is still reflected in the active model.
         with _state_lock:
             tier = _last_tier.get(session_id, 2)
-        if TIERS[tier]["model"] != model:
-            # Escalation was applied mid-loop -- confirm the switch is still live
-            _apply_tier(session_id, tier, model, source="escalated")
+        if TIERS[tier]["model"] != actual_model:
+            # Escalation was applied mid-loop — confirm the switch is still live
+            _apply_tier(session_id, tier, actual_model, source="escalated")
 
 
 # ---------------------------------------------------------------------------

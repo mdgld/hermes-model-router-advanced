@@ -27,9 +27,9 @@ These are bootstrap defaults only. Once `model_router.yaml` exists, the active p
 | Tier | Default model | Reasoning | Purpose |
 |---|---|---|---|
 | T1 | `qwen/qwen3.5-flash-02-23` | — | triage, acks, cheap helper work |
-| T2 | `qwen/qwen3.6-plus` | — | default daily-driver |
-| T3 | `anthropic/claude-haiku-4-5` | — | debugging, review, synthesis |
-| T4 | `anthropic/claude-sonnet-4-6` | `low` | planning, architecture |
+| T2 | `deepseek/deepseek-v4-flash` | — | default daily-driver |
+| T3 | `minimax/minimax-m2.7` | — | debugging, review, synthesis |
+| T4 | `anthropic/claude-haiku-4-5` | — | planning, architecture |
 | T5 | `anthropic/claude-sonnet-4-6` | `medium` | high-stakes reasoning |
 
 ## Installation
