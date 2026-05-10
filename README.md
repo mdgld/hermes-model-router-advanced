@@ -28,8 +28,8 @@ These are bootstrap defaults only. Once `model_router.yaml` exists, the active p
 |---|---|---|---|
 | T1 | `qwen/qwen3.5-flash-02-23` | — | triage, acks, cheap helper work |
 | T2 | `deepseek/deepseek-v4-flash` | — | default daily-driver |
-| T3 | `minimax/minimax-m2.7` | — | debugging, review, synthesis |
-| T4 | `anthropic/claude-haiku-4-5` | — | planning, architecture |
+| T3 | `minimax/minimax-m2.7` | — | creating, basic coding, review, synthesis |
+| T4 | `deepseek/deepseek-v4-pro` | — | planning, architecture, complex multi-step design |
 | T5 | `anthropic/claude-sonnet-4-6` | `medium` | high-stakes reasoning |
 
 ## Installation
@@ -131,7 +131,7 @@ tiers:
     label: T2 Maverick
     model: meta-llama/llama-4-maverick
   3:
-    model: anthropic/claude-haiku-4-5
+    model: deepseek/deepseek-v4-pro
   4:
     model: anthropic/claude-sonnet-4.5
     reasoning: low

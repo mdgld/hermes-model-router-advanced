@@ -85,9 +85,9 @@ DEFAULT_ROUTER_CONFIG = {
             ],
         },
         4: {
-            "label": "T4 Haiku",
+            "label": "T4 DeepSeek Pro",
             "emoji": "🔸",
-            "model": "anthropic/claude-haiku-4-5",
+            "model": "deepseek/deepseek-v4-pro",
             "reasoning": None,
             "role": "deliberate fast planner",
             "best_for": [
@@ -230,7 +230,7 @@ def _detect_explicit_tier(msg: str) -> int | None:
       T3, t2, T4, T5      — standalone Tx notation (case-insensitive)
       tier4, tier 3       — word form (case-insensitive, TIER 3, Tier5, etc.)
 
-    Model name keywords (sonnet, haiku, flash, plus, qwen...) are intentionally
+    Model name keywords (sonnet, deepseek, flash, plus, qwen...) are intentionally
     NOT supported here — use /model for explicit model selection. Those keywords
     cause more false positives than true routing signals.
 

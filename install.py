@@ -55,7 +55,7 @@ DEFAULT_ROUTER_CONFIG = {
             "emoji": "🔹",
             "model": "deepseek/deepseek-v4-flash",
             "reasoning": None,
-            "role": "default daily-driver",
+            "role": "default daily-driver, navigator",
             "best_for": [
                 "Default day-to-day work",
                 "Documentation and drafting",
@@ -67,7 +67,7 @@ DEFAULT_ROUTER_CONFIG = {
             "emoji": "🔷",
             "model": "minimax/minimax-m2.7",
             "reasoning": None,
-            "role": "strong reasoning and synthesis",
+            "role": "basic coding, creating",
             "best_for": [
                 "Debugging",
                 "Code review",
@@ -76,11 +76,11 @@ DEFAULT_ROUTER_CONFIG = {
             ],
         },
         4: {
-            "label": "T4 Haiku",
+            "label": "T4 DeepSeek Pro",
             "emoji": "🔸",
-            "model": "anthropic/claude-haiku-4-5",
-            "reasoning": None,
-            "role": "deliberate fast planner",
+            "model": "deepseek/deepseek-v4-pro",
+            "reasoning": high,
+            "role": "strong reasoning and synthesis",
             "best_for": [
                 "Architecture",
                 "Migration planning",
