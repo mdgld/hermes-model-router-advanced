@@ -25,6 +25,7 @@ import logging
 import os
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Default model definitions used only for bootstrap/fallback
+# KEEP IN SYNC with install.py DEFAULT_ROUTER_CONFIG — duplicated intentionally
+# so install.py remains a self-contained script with no import dependencies.
 # ---------------------------------------------------------------------------
 
 DEFAULT_ROUTER_CONFIG = {
@@ -88,7 +91,7 @@ DEFAULT_ROUTER_CONFIG = {
             "label": "T4 DeepSeek Pro",
             "emoji": "🔸",
             "model": "deepseek/deepseek-v4-pro",
-            "reasoning": None,
+            "reasoning": "high",
             "role": "deliberate fast planner",
             "best_for": [
                 "Architecture",
@@ -368,11 +371,29 @@ _base_tier:       dict[str, int] = {}              # session_id -> tier for this
 _tool_errors:     dict[str, int] = {}              # session_id -> consecutive tool error count this turn
 _escalated:       dict[str, bool] = {}             # session_id -> True if we already escalated mid-turn
 _live_agents:     dict[str, Any] = {}              # session_id -> active agent bound by WebUI/CLI bridge
+_session_ts:      dict[str, float] = {}            # session_id -> last-seen monotonic timestamp
+_SESSION_TTL      = 86_400.0                       # evict sessions idle longer than 24 h
 _state_lock = threading.Lock()
+_patch_lock = threading.Lock()                     # guards _patch_status_bar double-patch check
 
 def get_last_tier(session_id: str) -> int:
     with _state_lock:
         return _last_tier.get(session_id, 0)
+
+
+def _evict_stale_sessions() -> None:
+    """Remove state for sessions idle longer than _SESSION_TTL. Called on each new user turn."""
+    cutoff = time.monotonic() - _SESSION_TTL
+    with _state_lock:
+        stale = [sid for sid, ts in _session_ts.items() if ts < cutoff]
+        for sid in stale:
+            for d in (
+                _session_last, _session_manual, _session_pinned, _last_tier,
+                _base_tier, _tool_errors, _escalated, _live_agents, _session_ts,
+            ):
+                d.pop(sid, None)
+    if stale:
+        logger.debug("model-router: evicted %d stale session(s)", len(stale))
 
 
 def bind_session_agent(session_id: str, agent: Any) -> None:
@@ -471,36 +492,38 @@ def _patch_status_bar(cli) -> None:
     """Monkey-patch cli._get_status_bar_snapshot to inject [Tx] tier prefix.
 
     Called once after we have a cli reference. Safe to call multiple times --
-    guards against double-patching via _router_patched sentinel.
+    guards against double-patching via _router_patched sentinel (checked under
+    _patch_lock to prevent a TOCTOU race on concurrent calls).
     """
-    if getattr(cli, "_router_patched", False):
-        return
-    original_snapshot = cli._get_status_bar_snapshot.__func__  # unbound
-
-    def _patched_snapshot(self_cli):
-        snap = original_snapshot(self_cli)
-        # Read current tier from our registry
-        session_id = getattr(getattr(self_cli, "agent", None), "session_id", None) or ""
-        tier = get_last_tier(session_id)
-        if tier:
-            prefix = f"[T{tier}] "
-            # Read the model name from agent.model directly so the badge
-            # and the model name always match (agent.model may have changed
-            # since the original snapshot was captured).
-            agent = getattr(self_cli, "agent", None)
-            current_model = getattr(agent, "model", "") if agent else ""
-            if not current_model:
-                # Fallback to tier's default model if agent.model is somehow empty
-                current_model = TIERS.get(tier, {}).get("model", "")
-            # Extract just the short name (e.g. "claude-sonnet-4-6" from "anthropic/claude-sonnet-4-6")
-            name_only = current_model.split("/")[-1] if current_model else "unknown"
-            snap["model_short"] = prefix + name_only
-        return snap
-
     import types
-    cli._get_status_bar_snapshot = types.MethodType(_patched_snapshot, cli)
-    cli._router_patched = True
-    logger.debug("model-router: status bar patch applied")
+    with _patch_lock:
+        if getattr(cli, "_router_patched", False):
+            return
+        original_snapshot = cli._get_status_bar_snapshot.__func__  # unbound
+
+        def _patched_snapshot(self_cli):
+            snap = original_snapshot(self_cli)
+            # Read current tier from our registry
+            session_id = getattr(getattr(self_cli, "agent", None), "session_id", None) or ""
+            tier = get_last_tier(session_id)
+            if tier:
+                prefix = f"[T{tier}] "
+                # Read the model name from agent.model directly so the badge
+                # and the model name always match (agent.model may have changed
+                # since the original snapshot was captured).
+                agent = getattr(self_cli, "agent", None)
+                current_model = getattr(agent, "model", "") if agent else ""
+                if not current_model:
+                    # Fallback to tier's default model if agent.model is somehow empty
+                    current_model = TIERS.get(tier, {}).get("model", "")
+                # Extract just the short name (e.g. "claude-sonnet-4-6" from "anthropic/claude-sonnet-4-6")
+                name_only = current_model.split("/")[-1] if current_model else "unknown"
+                snap["model_short"] = prefix + name_only
+            return snap
+
+        cli._get_status_bar_snapshot = types.MethodType(_patched_snapshot, cli)
+        cli._router_patched = True
+        logger.debug("model-router: status bar patch applied")
 
 
 # ---------------------------------------------------------------------------
@@ -536,9 +559,11 @@ def _target_tier_for_turn(session_id: str, msg: str, history: list, current_mode
         is_new_user_turn = (last_entry is None) or (last_entry[0] != msg)
 
     if is_new_user_turn:
+        _evict_stale_sessions()
         with _state_lock:
             _tool_errors[session_id] = 0
             _escalated[session_id] = False
+            _session_ts[session_id] = time.monotonic()
 
         explicit = _detect_explicit_tier(msg)
         if explicit is not None:
@@ -558,6 +583,7 @@ def _target_tier_for_turn(session_id: str, msg: str, history: list, current_mode
         return target_tier, True
 
     with _state_lock:
+        _session_ts[session_id] = time.monotonic()
         return _last_tier.get(session_id, 2), False
 
 
@@ -771,10 +797,13 @@ def on_post_tool_call(
         if (
             '"error"' in result_lower
             or '"failed"' in result_lower
-            or result.startswith("Error")
-            or "exit_code" in result_lower and '"exit_code": ' in result_lower
-            and not '"exit_code": 0' in result_lower
-            and not '"exit_code": null' in result_lower
+            or result_lower.startswith("error")
+            or (
+                "exit_code" in result_lower
+                and '"exit_code": ' in result_lower
+                and '"exit_code": 0' not in result_lower
+                and '"exit_code": null' not in result_lower
+            )
         ):
             is_error = True
 
@@ -785,7 +814,6 @@ def on_post_tool_call(
             _tool_errors[session_id] = 0  # reset on success
 
         error_count = _tool_errors.get(session_id, 0)
-        already_escalated = _escalated.get(session_id, False)
         current_tier = _last_tier.get(session_id, 2)
 
     if (
@@ -879,13 +907,8 @@ def on_post_llm_call(
                 _last_tier[session_id] = base
             _apply_tier(session_id, base, agent.model, source="de-escalate")
 
-    except Exception:
-        pass
-
-
-def _apply_reasoning(effort: str | None) -> None:
-    """No-op helper stub."""
-    pass
+    except Exception as exc:
+        logger.debug("model-router: on_post_llm_call hook failed: %s", exc, exc_info=True)
 
 
 # ---------------------------------------------------------------------------

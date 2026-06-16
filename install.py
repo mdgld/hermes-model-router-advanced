@@ -27,6 +27,9 @@ import yaml
 PLUGIN_NAME = "model-router"
 SOUL_BLOCK_START = "<!-- model-router:start -->"
 SOUL_BLOCK_END = "<!-- model-router:end -->"
+
+# KEEP IN SYNC with __init__.py DEFAULT_ROUTER_CONFIG — duplicated intentionally
+# so install.py remains a self-contained script with no import dependencies.
 DEFAULT_ROUTER_CONFIG = {
     "classifier": {
         "provider": "openrouter",
@@ -105,6 +108,11 @@ DEFAULT_ROUTER_CONFIG = {
         "hermes_webui_dir": "",
     },
 }
+
+
+def _shell_single_quote(s: str) -> str:
+    """Return s safely single-quoted for embedding in a bash script."""
+    return "'" + str(s).replace("'", "'\\''") + "'"
 
 
 def ok(msg: str) -> None:
@@ -795,7 +803,7 @@ WEBUI_ROUTES_MODEL_ROUTER_HELPERS_BLOCK = """def _model_router_default_config() 
             5: {
                 "label": "T5 Sonnet",
                 "emoji": "🔶",
-                "model": "anthropic/claude-sonnet-4.6",
+                "model": "anthropic/claude-sonnet-4-6",
                 "reasoning": "medium",
                 "role": "expensive deep-think mode",
                 "best_for": [],
@@ -1252,7 +1260,7 @@ LAUNCHER_TEMPLATE = """#!/usr/bin/env bash
 unset PYTHONPATH
 unset PYTHONHOME
 
-HERMES_HOME_ROOT="{home_root}"
+HERMES_HOME_ROOT={home_root}
 HERMES_BIN="$HERMES_HOME_ROOT/hermes-agent/venv/bin/hermes"
 HERMES_PYTHON="$HERMES_HOME_ROOT/hermes-agent/venv/bin/python"
 MODEL_ROUTER_INSTALL="$HERMES_HOME_ROOT/plugins/model-router/install.py"
@@ -1830,6 +1838,11 @@ def sync_global_plugin(home_root: Path) -> Path:
         return dst
 
     dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_dst = dst.parent / f"{dst.name}.bak.model-router.{stamp}"
+        shutil.copytree(dst, backup_dst)
+        ok(f"Backed up existing plugin dir to {backup_dst.name}")
     ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
     shutil.copytree(src, dst, dirs_exist_ok=True, ignore=ignore)
     ok(f"Synced plugin source to canonical location: {dst}")
@@ -1844,7 +1857,7 @@ def ensure_global_launcher(home_root: Path) -> None:
 
     launcher_path = Path.home() / ".local" / "bin" / "hermes"
     launcher_path.parent.mkdir(parents=True, exist_ok=True)
-    new_text = LAUNCHER_TEMPLATE.format(home_root=str(home_root))
+    new_text = LAUNCHER_TEMPLATE.format(home_root=_shell_single_quote(str(home_root)))
     if launcher_path.exists():
         old_text = launcher_path.read_text(encoding="utf-8")
         if old_text == new_text:
@@ -1919,6 +1932,8 @@ def backup_path(path: Path) -> Path:
     return path.with_name(f"{path.name}.bak.model-router.{stamp}")
 
 
+# KEEP IN SYNC with __init__.py _deep_merge — duplicated intentionally
+# so install.py remains a self-contained script with no import dependencies.
 def _deep_merge(base: dict, override: dict) -> dict:
     merged = copy.deepcopy(base)
     for key, value in override.items():
@@ -1974,9 +1989,12 @@ def ensure_router_config(home_dir: Path) -> dict:
     existing = path.read_text(encoding="utf-8") if path.exists() else None
     if existing != rendered:
         path.write_text(rendered, encoding="utf-8")
+        path.chmod(0o600)  # restrict read access — file may contain api_key
         action = "created" if existing is None else "normalized"
         ok(f"{home_dir.name if home_dir.name != '.hermes' else 'default'}: {action} model_router.yaml")
     else:
+        # Ensure permissions are correct even if content was unchanged
+        path.chmod(0o600)
         ok(f"{home_dir.name if home_dir.name != '.hermes' else 'default'}: model_router.yaml already current")
     return config
 
