@@ -200,18 +200,12 @@ def is_model_router_enabled(home_dir: Path) -> bool:
 
 TIER_COMMANDS_BLOCK = """
     #Model Router
-    CommandDef("t1", "Pin session to the configured T1 slot — disables auto-routing until /auto", "Configuration",
-               cli_only=True),
-    CommandDef("t2", "Pin session to the configured T2 slot — disables auto-routing until /auto", "Configuration",
-               cli_only=True),
-    CommandDef("t3", "Pin session to the configured T3 slot — disables auto-routing until /auto", "Configuration",
-               cli_only=True),
-    CommandDef("t4", "Pin session to the configured T4 slot — disables auto-routing until /auto", "Configuration",
-               cli_only=True),
-    CommandDef("t5", "Pin session to the configured T5 slot — disables auto-routing until /auto", "Configuration",
-               cli_only=True),
-    CommandDef("auto", "Resume auto model routing (undo /model or /t1-/t5 pin for this session)", "Configuration",
-               cli_only=True),
+    CommandDef("t1", "Pin session to the configured T1 slot — disables auto-routing until /auto", "Configuration"),
+    CommandDef("t2", "Pin session to the configured T2 slot — disables auto-routing until /auto", "Configuration"),
+    CommandDef("t3", "Pin session to the configured T3 slot — disables auto-routing until /auto", "Configuration"),
+    CommandDef("t4", "Pin session to the configured T4 slot — disables auto-routing until /auto", "Configuration"),
+    CommandDef("t5", "Pin session to the configured T5 slot — disables auto-routing until /auto", "Configuration"),
+    CommandDef("auto", "Resume auto model routing (undo /model or /t1-/t5 pin for this session)", "Configuration"),
 """
 
 CLI_REF_BLOCK = """        # Ensure plugin manager has a CLI reference even in non-interactive
@@ -1392,7 +1386,7 @@ def repair_commands_py(commands_path: Path) -> bool:
         flags=re.MULTILINE,
     )
     cleaned = re.sub(
-        r'^\s*CommandDef\("t1".*?^\s*CommandDef\("auto".*?^\s*cli_only=True\),\n?',
+        r'^\s*CommandDef\("t1".*?^\s*CommandDef\("auto".*?(?:\s*cli_only=True)?\),\n?',
         "",
         cleaned,
         flags=re.MULTILINE | re.DOTALL,
@@ -1828,7 +1822,9 @@ def collect_missing_core_integrations(home_root: Path) -> list[str]:
     commands_text = commands_path.read_text(encoding="utf-8")
 
     missing: list[str] = []
-    if f"{TIER_COMMANDS_BLOCK}]" not in commands_text:
+    # Accept tier commands with or without cli_only=True (gateway needs no cli_only)
+    _norm = lambda s: re.sub(r',?\s*cli_only=True', '', s)
+    if _norm(f"{TIER_COMMANDS_BLOCK}]") not in _norm(commands_text):
         missing.append("complete slash command block for /t1-/t5 and /auto in the command registry")
     if CLI_REF_BLOCK not in cli_text:
         missing.append("complete cli.py _cli_ref block for non-interactive mode")
@@ -2103,7 +2099,7 @@ def render_triage_specifier_block(router_config: dict) -> str:
 
 def ensure_triage_specifier(text: str, router_config: dict) -> tuple[str, bool]:
     block = render_triage_specifier_block(router_config)
-    pattern = r"^  triage_specifier:\n(?:    .*\n|      .*\n)*"
+    pattern = r"^  triage_specifier:\n(?:(?: {4,}.*)?(?:\n|$))*"
     if re.search(pattern, text, flags=re.MULTILINE):
         updated = re.sub(pattern, block, text, count=1, flags=re.MULTILINE)
         return updated, updated != text
