@@ -43,23 +43,24 @@ logger = logging.getLogger(__name__)
 DEFAULT_ROUTER_CONFIG = {
     "provider_priority": ["nous", "openai-codex", "openrouter"],
     "classifier": {
-        "provider": "openrouter",
-        "model": "qwen/qwen3.5-flash-02-23",
-        "base_url": "https://openrouter.ai/api/v1",
+        "provider": "nous",
+        "model": "deepseek/deepseek-v4-flash",
+        "base_url": "https://inference-api.nousresearch.com/v1",
         "api_key": "",
         "timeout": 30,
-        "extra_body": {"enable_caching": True},
+        "extra_body": {"enable_caching": True, "reasoning_effort": "high"},
         "fallbacks": [
             {"provider": "openai-codex", "model": "gpt-5.4-mini", "reasoning_effort": "low"},
-            {"provider": "openrouter", "model": "qwen/qwen3.5-flash-02-23"},
+            {"provider": "openrouter", "model": "deepseek/deepseek-v4-flash", "reasoning_effort": "high"},
         ],
     },
     "tiers": {
         1: {
-            "label": "T1 Flash",
+            "label": "T1 Flash (MiMo v2.5 Pro)",
             "emoji": "⚡",
-            "model": "qwen/qwen3.5-flash-02-23",
-            "reasoning": None,
+            "model": "xiaomi/mimo-v2.5-pro",
+            "reasoning": "enabled",
+            "extra_body": {"enable_caching": True},
             "role": "fast triage and cheap helper",
             "best_for": [
                 "Short acknowledgements",
@@ -68,74 +69,80 @@ DEFAULT_ROUTER_CONFIG = {
                 "Title generation",
             ],
             "fallbacks": [
-                {"provider": "openai-codex", "model": "gpt-5.4-mini", "reasoning": "low"},
-                {"provider": "openrouter", "model": "qwen/qwen3.5-flash-02-23"},
+                {"provider": "openai-codex", "model": "gpt-5.4-mini", "reasoning": "low", "extra_body": {"enable_caching": True}},
+                {"provider": "openrouter", "model": "xiaomi/mimo-v2.5-pro", "reasoning": "enabled", "extra_body": {"enable_caching": True}},
             ],
         },
         2: {
-            "label": "T2 DeepSeek",
+            "label": "T2 (DeepSeek v4 Pro)",
             "emoji": "🔹",
-            "model": "deepseek/deepseek-v4-flash",
-            "reasoning": None,
-            "role": "default daily-driver",
+            "model": "deepseek/deepseek-v4-pro",
+            "reasoning": "max",
+            "extra_body": {"enable_caching": True},
+            "role": "day-to-day usage, basic tasks",
             "best_for": [
-                "Default day-to-day work",
-                "Documentation and drafting",
-                "Standard coding and research",
+                "Standard day-to-day work",
+                "Well-defined documentation and drafting",
+                "Extremely basic coding and research",
             ],
             "fallbacks": [
-                {"provider": "openai-codex", "model": "gpt-5.4-mini", "reasoning": "high"},
-                {"provider": "openrouter", "model": "deepseek/deepseek-v4-flash"},
+                {"provider": "openai-codex", "model": "gpt-5.4-mini", "reasoning": "medium", "extra_body": {"enable_caching": True}},
+                {"provider": "openrouter", "model": "deepseek/deepseek-v4-pro", "reasoning": "max", "extra_body": {"enable_caching": True}},
             ],
         },
         3: {
-            "label": "T3 MiniMax",
+            "label": "T3 (MiniMax M3)",
             "emoji": "🔷",
-            "model": "minimax/minimax-m2.7",
-            "reasoning": None,
-            "role": "strong reasoning and synthesis",
+            "model": "minimax/minimax-m3",
+            "reasoning": "enabled",
+            "extra_body": {"enable_caching": True},
+            "role": "standard coding, well-defined short tasks",
             "best_for": [
-                "Debugging",
-                "Code review",
-                "Large-document synthesis",
-                "Complex analysis",
+                "Basic troubleshooting",
+                "Light code review",
+                "Standard reasoning",
             ],
             "fallbacks": [
-                {"provider": "openai-codex", "model": "gpt-5.4-mini", "reasoning": "xhigh"},
-                {"provider": "openrouter", "model": "minimax/minimax-m2.7"},
+                {"provider": "openai-codex", "model": "gpt-5.4-mini", "reasoning": "xhigh", "extra_body": {"enable_caching": True}},
+                {"provider": "openrouter", "model": "minimax/minimax-m3", "reasoning": "enabled", "extra_body": {"enable_caching": True}},
             ],
         },
         4: {
-            "label": "T4 DeepSeek Pro",
+            "label": "T4 (GLM 5.2)",
             "emoji": "🔸",
-            "model": "deepseek/deepseek-v4-pro",
-            "reasoning": "high",
-            "role": "deliberate fast planner",
+            "model": "z-ai/glm-5.2",
+            "reasoning": "xhigh",
+            "extra_body": {"enable_caching": True},
+            "role": "strong reasoning and synthesis",
             "best_for": [
-                "Architecture",
+                "Architecture and refactoring",
                 "Migration planning",
-                "Complex multi-step design",
+                "Basic agentic workflows",
+                "Complex multi-step designs and workflows",
                 "Nuanced code review",
             ],
             "fallbacks": [
-                {"provider": "openai-codex", "model": "gpt-5.4", "reasoning": "medium"},
-                {"provider": "openrouter", "model": "deepseek/deepseek-v4-pro", "reasoning": "high"},
+                {"provider": "openai-codex", "model": "gpt-5.4", "reasoning": "high", "extra_body": {"enable_caching": True}},
+                {"provider": "openrouter", "model": "z-ai/glm-5.2", "reasoning": "xhigh", "extra_body": {"enable_caching": True}},
             ],
         },
         5: {
-            "label": "T5 Sonnet",
-            "emoji": "🔶",
-            "model": "anthropic/claude-sonnet-4-6",
-            "reasoning": "medium",
+            "label": "T5 (GPT-5.5)",
+            "emoji": "🔶🔶",
+            "model": "openai/gpt-latest",
+            "reasoning": "high",
+            "extra_body": {"enable_caching": True},
             "role": "expensive deep-think mode",
             "best_for": [
                 "Security-sensitive analysis",
+                "High-stakes tasks",
                 "Algorithmic optimization",
-                "High-stakes reasoning",
+                "Long-context agentic workflows",
+                "Near-human-level reasoning on certain tasks",
             ],
             "fallbacks": [
                 {"provider": "openai-codex", "model": "gpt-5.5", "reasoning": "high"},
-                {"provider": "openrouter", "model": "anthropic/claude-sonnet-4-6", "reasoning": "medium"},
+                {"provider": "openrouter", "model": "openai/gpt-latest", "reasoning": "high", "extra_body": {"enable_caching": True}},
             ],
         },
     },
@@ -211,6 +218,7 @@ def _apply_router_config(config: dict[str, Any]) -> None:
     TIERS = {
         tier_num: {
             "model": meta["model"],
+            "provider": meta.get("provider"),
             "reasoning": meta.get("reasoning"),
             "label": meta.get("label", f"T{tier_num}"),
             "emoji": meta.get("emoji", ""),
@@ -532,7 +540,7 @@ def _select_tier_entry(tier: int) -> tuple[str, str | None, str]:
     tier_data = TIERS.get(tier, {})
     primary_model     = tier_data.get("model", "")
     primary_reasoning = tier_data.get("reasoning")
-    primary_provider  = PROVIDER_PRIORITY[0] if PROVIDER_PRIORITY else ""
+    primary_provider  = str(tier_data.get("provider") or (PROVIDER_PRIORITY[0] if PROVIDER_PRIORITY else "")).strip()
 
     if _is_provider_healthy(primary_provider):
         return primary_model, primary_reasoning, primary_provider
@@ -851,22 +859,25 @@ def prepare_turn(
         }
 
     target_tier, is_new_user_turn = _target_tier_for_turn(session_id, msg, history, actual_model)
-    target_meta = TIERS.get(target_tier, {})
-    target_model = str(target_meta.get("model", "") or actual_model)
-    target_reasoning = target_meta.get("reasoning")
+    target_model, target_reasoning, target_provider = _select_tier_entry(target_tier)
+    if not target_model:
+        target_model = actual_model
+    actual_provider = getattr(agent, "provider", "") if agent is not None else ""
+    provider_mismatch = bool(target_provider and actual_provider and target_provider != actual_provider)
 
     logger.debug(
-        "model-router: turn T%d -> model=%s vs actual=%s",
-        target_tier, target_model, actual_model,
+        "model-router: turn T%d -> provider=%s model=%s vs actual_provider=%s actual_model=%s",
+        target_tier, target_provider, target_model, actual_provider, actual_model,
     )
 
     if apply_live:
-        if target_model != actual_model:
+        if target_model != actual_model or provider_mismatch:
             logger.info(
-                "model-router: switching T%d (was T%d / %s)",
+                "model-router: switching T%d (was T%d / %s via %s)",
                 target_tier,
                 MODEL_TO_TIER.get(actual_model, 0),
                 actual_model.split("/")[-1] if actual_model else "unknown",
+                actual_provider or "unknown",
             )
             _apply_tier(session_id, target_tier, actual_model, source="")
         else:
@@ -876,9 +887,9 @@ def prepare_turn(
                     _patch_status_bar(cli)
             except Exception:
                 pass
-    elif agent is not None and target_model != actual_model:
+    elif agent is not None and (target_model != actual_model or provider_mismatch):
         # WebUI may pre-resolve the routed model before the hook fires; if a
-        # reused cached agent still carries the old model, normalize it here.
+        # reused cached agent still carries the old model/provider, normalize it here.
         _apply_tier(session_id, target_tier, actual_model, source="webui-sync")
 
     return {
@@ -923,17 +934,19 @@ def _apply_tier(session_id: str, target_tier: int, current_model: str, source: s
         if agent is None:
             return
 
-        old_model   = agent.model
-        agent.model = target_model
+        old_model = agent.model
+        old_provider = getattr(agent, "provider", "") or ""
+        base_url = _PROVIDER_BASE_URLS.get(provider, "")
+        api_mode = ""
+        try:
+            from hermes_cli.providers import determine_api_mode  # type: ignore
+            api_mode = determine_api_mode(provider, base_url)
+        except Exception:
+            api_mode = "bedrock_converse" if provider == "bedrock" else "chat_completions"
 
-        if target_reasoning:
-            agent.reasoning_config = {"effort": target_reasoning}
-        else:
-            agent.reasoning_config = None
-
-        # In TUI mode, also invoke the proper switch mechanism so the shared
-        # OpenAI client, provider, base_url, and status bar all update via
-        # agent.switch_model() — direct attribute assignment is not enough there.
+        # In TUI mode, invoke the proper switch mechanism so the shared client,
+        # provider, base_url, api_mode, and status bar all update via the same
+        # path as /model. Direct attribute assignment is not enough there.
         tui_ctx = None
         with _state_lock:
             tui_ctx = _live_tui_sessions.get(session_id)
@@ -948,6 +961,28 @@ def _apply_tier(session_id: str, target_tier: int, current_model: str, source: s
                 )
             except Exception as exc:
                 logger.debug("model-router: TUI _apply_model_switch failed: %s", exc)
+                raise
+        elif hasattr(agent, "switch_model"):
+            agent.switch_model(
+                new_model=target_model,
+                new_provider=provider,
+                api_key="",
+                base_url=base_url,
+                api_mode=api_mode,
+            )
+        else:
+            agent.model = target_model
+            if provider:
+                agent.provider = provider
+            if base_url:
+                agent.base_url = base_url
+            if api_mode:
+                agent.api_mode = api_mode
+
+        if target_reasoning:
+            agent.reasoning_config = {"effort": target_reasoning}
+        else:
+            agent.reasoning_config = None
 
         _record_router_set(session_id)
 
@@ -970,7 +1005,7 @@ def _apply_tier(session_id: str, target_tier: int, current_model: str, source: s
         logger.info(
             "model-router: T%d->T%d | %s -> %s%s",
             current_tier, target_tier,
-            old_model, target_model,
+            f"{old_provider}/{old_model}", f"{provider}/{target_model}",
             f" [{source}]" if source else "",
         )
     except Exception as exc:
