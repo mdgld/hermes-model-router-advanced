@@ -52,6 +52,8 @@ The `tier` key is preserved as a back-compat alias for `working_tier`, so existi
 
 ---
 
+## Original Project Description
+
 `model-router` classifies each turn, picks the cheapest tier that should work, and escalates only when the task needs more reasoning.
 
 ## What It Does
