@@ -1,6 +1,6 @@
 # model-router
 
-Automatic cost-aware model routing for Hermes Agent.
+Automatic cost-aware model routing for Hermes Agent. 
 
 `model-router` classifies each turn, picks the cheapest tier that should work, and escalates only when the task needs more reasoning.
 
@@ -275,9 +275,3 @@ The `tier` key is preserved as a back-compat alias for `working_tier`, so existi
 ## License
 
 This project is licensed under the `MIT` License. See `LICENSE`.
-
-## Support
-
-If this plugin saved you time or helped you ship something useful, you can support the work here:
-
-https://buymeacoffee.com/jakubmisiak
